@@ -1,0 +1,16 @@
+class MockClient:
+    def __init__(self, **kwargs):
+        pass
+
+    def generate(self, prompt):
+        # Return a sample JSON question based on the prompt type
+        if "experienced SOC analyst" in prompt:
+            return """
+{
+  "question": "Which MITRE ATT&CK technique is most likely used for persistence in this scenario?",
+  "options": ["T1547.001 (Registry Run Keys)", "T1059.003 (Windows Command Shell)", "T1071.001 (Web Protocols)", "T1027 (Obfuscated Files)"],
+  "correct_options": ["T1547.001 (Registry Run Keys)"]
+}
+"""
+        else:
+            return "Option A"

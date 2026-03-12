@@ -1,0 +1,13 @@
+ollama
+google-generativeai
+transformers
+datasets
+torch
+pandas
+numpy
+tqdm
+jinja2
+pyyaml
+scikit-learn
+pypdf
+requests
