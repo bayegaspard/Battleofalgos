@@ -1,12 +1,13 @@
-from src.llm_router import LLMRouter
-from src.malware_question_gen import MalwareQuestionGenerator
-from src.report_filter import filter_report
-import json
 import os
 import sys
 
 # Add project root to path
 sys.path.append(os.getcwd())
+
+from src.llm_router import LLMRouter
+from src.malware_question_gen import MalwareQuestionGenerator
+from src.report_filter import filter_report
+import json
 
 def generate():
     llm = LLMRouter("config.yaml")

@@ -1,11 +1,12 @@
-from src.llm_router import LLMRouter
-from src.evaluation import evaluate
-import json
 import os
 import sys
 
 # Add project root to path
 sys.path.append(os.getcwd())
+
+from src.llm_router import LLMRouter
+from src.evaluation import evaluate
+import json
 
 def run():
     config_path = "config.yaml"

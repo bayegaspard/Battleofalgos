@@ -1,12 +1,13 @@
-from src.llm_router import LLMRouter
-from src.threat_question_gen import ThreatQuestionGenerator
-from src.data_loader import extract_pdf_pages
-import json
 import os
 import sys
 
 # Add project root to path
 sys.path.append(os.getcwd())
+
+from src.llm_router import LLMRouter
+from src.threat_question_gen import ThreatQuestionGenerator
+from src.data_loader import extract_pdf_pages
+import json
 
 def generate():
     llm = LLMRouter("config.yaml")

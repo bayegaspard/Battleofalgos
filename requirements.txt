@@ -1,5 +1,5 @@
 ollama
-google-generativeai
+google-genai
 transformers
 datasets
 torch
