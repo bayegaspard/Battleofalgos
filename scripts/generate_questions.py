@@ -17,8 +17,8 @@ def generate():
         "prompts/malware_question.jinja"
     )
 
-    # Assuming data is in cybersoceval-local/data/malware_reports/
-    reports_dir = "data/malware_reports"
+    # Updated to point to existing hybrid-analysis data
+    reports_dir = "data/hybrid-analysis"
     output_path = "data/questions/questions.json"
 
     questions = []

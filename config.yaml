@@ -1,4 +1,4 @@
-model_provider: mock
+model_provider: gemini
 
 ollama:
   model: gpt-oss:20b

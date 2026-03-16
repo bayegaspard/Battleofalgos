@@ -17,7 +17,7 @@ def generate():
         "prompts/threat_category.jinja"
     )
 
-    reports_dir = "data/threat_reports"
+    reports_dir = "data/crowdstrike-reports"
     output_path = "data/questions/threat_questions.json"
 
     categories = ["Malware Analysis", "Threat Actor Attribution", "Campaign Analysis", "Indicator of Compromise"]
