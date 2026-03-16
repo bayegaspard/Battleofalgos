@@ -17,7 +17,12 @@ class LLMRouter:
             self.client = OllamaClient(**config["ollama"])
 
         elif provider == "gemini":
-            self.client = GeminiClient(**config["gemini"])
+            gemini_config = config["gemini"]
+            key = gemini_config.get("api_key")
+            self.client = GeminiClient(
+                model=gemini_config.get("model"),
+                api_key=key
+            )
             
         elif provider == "mock":
             from src.mock_client import MockClient
