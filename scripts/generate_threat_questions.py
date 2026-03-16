@@ -29,7 +29,7 @@ def generate():
         return
 
     for f in os.listdir(reports_dir):
-        if not f.endswith(".pdf"):
+        if not f.endswith(".pdf") or f.startswith("."):
             continue
             
         file_path = os.path.join(reports_dir, f)

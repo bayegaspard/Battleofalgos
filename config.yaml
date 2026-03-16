@@ -1,9 +1,0 @@
-model_provider: gemini
-
-ollama:
-  model: gpt-oss:20b
-  host: http://localhost:11434
-
-gemini:
-  model: gemini-1.5-pro
-  api_key: YOUR_GEMINI_KEY

@@ -29,7 +29,7 @@ def generate():
 
     for root, dirs, files in os.walk(reports_dir, followlinks=True):
         for f in files:
-            if f == "questions.json" or f.startswith("."):
+            if not f.endswith(".json") or f == "questions.json" or f.startswith("."):
                 continue
                 
             file_path = os.path.join(root, f)
