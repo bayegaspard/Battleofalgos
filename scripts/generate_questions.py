@@ -29,7 +29,7 @@ def generate():
 
     for root, dirs, files in os.walk(reports_dir, followlinks=True):
         for f in files:
-            if not f.endswith(".json") or f == "questions.json" or f.startswith("."):
+            if f == "questions.json" or f.startswith("."):
                 continue
                 
             file_path = os.path.join(root, f)
@@ -37,7 +37,6 @@ def generate():
                 try:
                     report = json.load(report_file)
                 except json.JSONDecodeError:
-                    print(f"Error decoding {file_path}")
                     continue
 
             # Filter report to reduce tokens
