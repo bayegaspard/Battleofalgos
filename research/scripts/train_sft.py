@@ -1,0 +1,79 @@
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer, DataCollatorForLanguageModeling
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from datasets import load_dataset
+import os
+
+def train():
+    model_id = "meta-llama/Meta-Llama-3-8B-Instruct" # Users usually have this or can get it
+    dataset_path = "data/finetuning/malware_sft_data.jsonl"
+    output_dir = "research/results/sft_llama3_lora"
+
+    print(f"Loading model: {model_id}")
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer.pad_token = tokenizer.eos_token
+
+    # Load in 4-bit/8-bit if using BitsAndBytes (CUDA only) or just FP16
+    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    if torch.cuda.is_available(): device = "cuda"
+    
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        torch_dtype=torch.float16,
+        device_map="auto" if device == "cuda" else None
+    )
+    if device != "cuda":
+        model = model.to(device)
+
+    # LoRA Config
+    lora_config = LoraConfig(
+        r=16,
+        lora_alpha=32,
+        target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
+        lora_dropout=0.05,
+        bias="none",
+        task_type="CAUSAL_LM"
+    )
+
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
+
+    # Load dataset
+    dataset = load_dataset("json", data_files=dataset_path, split="train")
+
+    def format_instruction(sample):
+        return f"### System: You are a Tier-3 SOC Analyst. Analyze the following and think step-by-step.\n\n### Report: {sample['question']}\n\n### Response: <thought>{sample['thought']}</thought>Answer: {', '.join(sample['correct_options'])}"
+
+    def tokenize_function(examples):
+        texts = [format_instruction(dict(zip(examples.keys(), values))) for values in zip(*examples.values())]
+        return tokenizer(texts, truncation=True, padding="max_length", max_length=1024)
+
+    tokenized_dataset = dataset.map(tokenize_function, batched=True, remove_columns=dataset.column_names)
+
+    training_args = TrainingArguments(
+        output_dir=output_dir,
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=4,
+        learning_rate=2e-4,
+        num_train_epochs=3,
+        logging_steps=10,
+        save_strategy="epoch",
+        fp16=True if device == "cuda" else False,
+        use_mps_device=True if device == "mps" else False,
+        report_to="none"
+    )
+
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=tokenized_dataset,
+        data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False)
+    )
+
+    print("Starting training...")
+    trainer.train()
+    model.save_pretrained(output_dir)
+    print(f"Model saved to {output_dir}")
+
+if __name__ == "__main__":
+    train()
