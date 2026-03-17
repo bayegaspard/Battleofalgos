@@ -50,10 +50,11 @@ def train():
     dataset = load_dataset("json", data_files=dataset_path, split="train")
 
     def format_instruction(sample):
-        return f"### System: You are a Tier-3 SOC Analyst. Analyze the following and think step-by-step.\n\n### Report: {sample['question']}\n\n### Response: <thought>{sample['thought']}</thought>Answer: {', '.join(sample['correct_options'])}"
+        # The dataset has 'instruction', 'input', 'output' keys
+        return f"### Instruction:\n{sample['instruction']}\n\n### Input:\n{sample['input']}\n\n### Response:\n{sample['output']}"
 
     def tokenize_function(examples):
-        texts = [format_instruction(dict(zip(examples.keys(), values))) for values in zip(*examples.values())]
+        texts = [format_instruction({k: examples[k][i] for k in examples}) for i in range(len(examples['input']))]
         return tokenizer(texts, truncation=True, padding="max_length", max_length=1024)
 
     tokenized_dataset = dataset.map(tokenize_function, batched=True, remove_columns=dataset.column_names)
@@ -67,7 +68,6 @@ def train():
         logging_steps=10,
         save_strategy="epoch",
         fp16=True if device == "cuda" else False,
-        use_mps_device=True if device == "mps" else False,
         report_to="none"
     )
 

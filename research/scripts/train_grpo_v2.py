@@ -24,6 +24,11 @@ try:
 except ImportError:
     HAS_UNSLOTH = False
 
+# Configuration
+model_name = "unsloth/Llama-3.2-3B-Instruct-bnb-4bit"
+max_seq_length = 1024
+load_in_4bit = True
+
 def is_bfloat16_supported_fallback():
     if HAS_UNSLOTH: return is_bfloat16_supported()
     return torch.cuda.is_available() and torch.cuda.is_bf16_supported()
