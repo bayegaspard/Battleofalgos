@@ -9,37 +9,66 @@ to reason through malware reports. It rewards:
 """
 
 import re
+import os
 import torch
 from datasets import load_dataset, Dataset
-from unsloth import FastLanguageModel, PatchFastRL
-from unsloth import is_bfloat16_supported
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import GRPOConfig, GRPOTrainer
 
-# 1. Patch Unsloth for RL
-PatchFastRL()
+# Optional Unsloth for CUDA speedup
+try:
+    from unsloth import FastLanguageModel, PatchFastRL
+    from unsloth import is_bfloat16_supported
+    HAS_UNSLOTH = True
+    PatchFastRL()
+except ImportError:
+    HAS_UNSLOTH = False
 
-# 2. Configuration
-model_name = "unsloth/Llama-3.2-3B-Instruct-bnb-4bit" # Good balance of speed/memory
-max_seq_length = 1024 # Buffer for thinking
-load_in_4bit = True
+def is_bfloat16_supported_fallback():
+    if HAS_UNSLOTH: return is_bfloat16_supported()
+    return torch.cuda.is_available() and torch.cuda.is_bf16_supported()
 
-model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name = model_name,
-    max_seq_length = max_seq_length,
-    load_in_4bit = load_in_4bit,
-    fast_inference = True,
-    max_lora_rank = 32,
-)
+# 2. Load Model
+device = "mps" if torch.backends.mps.is_available() else "cpu"
+if torch.cuda.is_available(): device = "cuda"
 
-model = FastLanguageModel.get_peft_model(
-    model,
-    r = 32,
-    target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
-                      "gate_proj", "up_proj", "down_proj",],
-    lora_alpha = 32,
-    use_gradient_checkpointing = "unsloth",
-    random_state = 3407,
-)
+if HAS_UNSLOTH and device == "cuda":
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name = model_name,
+        max_seq_length = max_seq_length,
+        load_in_4bit = load_in_4bit,
+        fast_inference = True,
+        max_lora_rank = 32,
+    )
+    model = FastLanguageModel.get_peft_model(
+        model,
+        r = 32,
+        target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
+                          "gate_proj", "up_proj", "down_proj",],
+        lora_alpha = 32,
+        use_gradient_checkpointing = "unsloth",
+        random_state = 3407,
+    )
+else:
+    # Fallback to standard Transformers/PEFT
+    print(f"Using standard Transformers on {device}")
+    from peft import LoraConfig, get_peft_model
+    model_id = "unsloth/Llama-3.2-1B-Instruct" if device == "mps" else model_name
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        torch_dtype=torch.float16 if device != "cpu" else torch.float32,
+        device_map="auto" if device == "cuda" else None
+    )
+    if device != "cuda": model = model.to(device)
+    
+    lora_config = LoraConfig(
+        r=32,
+        lora_alpha=32,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+        task_type="CAUSAL_LM"
+    )
+    model = get_peft_model(model, lora_config)
 
 # 3. Reward Functions
 
@@ -113,8 +142,8 @@ training_args = GRPOConfig(
     warmup_ratio = 0.1,
     lr_scheduler_type = "cosine",
     logging_steps = 1,
-    bf16 = is_bfloat16_supported(),
-    fp16 = not is_bfloat16_supported(),
+    bf16 = is_bfloat16_supported_fallback(),
+    fp16 = not is_bfloat16_supported_fallback(),
     per_device_train_batch_size = 1,
     gradient_accumulation_steps = 4,
     num_generations = 4, # Group size for GRPO

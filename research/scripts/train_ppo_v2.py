@@ -8,12 +8,19 @@ analyst preferences. It requires:
 3. A Reward mechanism (Scoring function or Reward Model)
 """
 
+import os
 import torch
 from datasets import load_dataset
 from tqdm import tqdm
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, create_reference_model
-from unsloth import FastLanguageModel
+
+# Optional Unsloth for CUDA speedup
+try:
+    from unsloth import FastLanguageModel
+    HAS_UNSLOTH = True
+except ImportError:
+    HAS_UNSLOTH = False
 
 # 1. Configuration
 config = PPOConfig(
@@ -27,16 +34,23 @@ config = PPOConfig(
     target_kl=0.1,
 )
 
-# 2. Load Model (with Value Head for PPO)
-# Note: Unsloth doesn't natively support ValueHead in the same way as SFT, 
-# so we use traditional TRL with Unsloth's optimized weights.
-model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name = config.model_name,
-    load_in_4bit = True,
-)
+# 2. Load Model
+device = "mps" if torch.backends.mps.is_available() else "cpu"
+if torch.cuda.is_available(): device = "cuda"
 
-# PPO needs a 'Value Head' to estimate rewards
-model = AutoModelForCausalLMWithValueHead.from_pretrained(model)
+if HAS_UNSLOTH and device == "cuda":
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name = config.model_name,
+        load_in_4bit = True,
+    )
+    model = AutoModelForCausalLMWithValueHead.from_pretrained(model)
+else:
+    # Fallback to standard Transformers if no CUDA or Unsloth
+    print(f"Using standard Transformers on {device}")
+    model_id = "unsloth/Llama-3.2-1B-Instruct" if device == "mps" else config.model_name
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForCausalLMWithValueHead.from_pretrained(model_id)
+    if device != "cuda": model = model.to(device)
 ref_model = create_reference_model(model)
 
 # 3. Custom Reward Logic (The 'Analyst Preference')

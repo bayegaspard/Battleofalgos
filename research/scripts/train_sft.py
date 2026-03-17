@@ -5,8 +5,16 @@ from datasets import load_dataset
 import os
 
 def train():
-    # Using Mistral-7B-Instruct-v0.3 (Non-gated)
+    # Detect hardware
+    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    if torch.cuda.is_available(): device = "cuda"
+    
+    # Use smaller model for Mac to avoid OOM
     model_id = "mistralai/Mistral-7B-Instruct-v0.3" 
+    if device == "mps":
+        model_id = "unsloth/Llama-3.2-1B-Instruct" # Lightweight for local dev
+        print(f"CUDA NOT DETECTED. Using lightweight model for Mac: {model_id}")
+
     base_dir = os.getcwd()
     dataset_path = os.path.join(base_dir, "data/finetuning/malware_sft_data.jsonl")
     output_dir = os.path.join(base_dir, "research/results/sft_mistral_lora")
@@ -16,12 +24,10 @@ def train():
     tokenizer.pad_token = tokenizer.eos_token
 
     # Load in 4-bit/8-bit if using BitsAndBytes (CUDA only) or just FP16
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
-    if torch.cuda.is_available(): device = "cuda"
     
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
-        torch_dtype=torch.float16,
+        torch_dtype=torch.float16 if device != "cpu" else torch.float32,
         device_map="auto" if device == "cuda" else None
     )
     if device != "cuda":
