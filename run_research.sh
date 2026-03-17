@@ -75,6 +75,13 @@ fi
 if [ "$SKIP_TRAIN" = false ]; then
     echo -e "\n[3/6] Starting Multi-Stage Training Pipeline..."
 
+    # PRE-TRAIN VALIDATION
+    if [ ! -f "data/finetuning/malware_sft_data.jsonl" ]; then
+        echo "CRITICAL ERROR: Distilled dataset 'data/finetuning/malware_sft_data.jsonl' not found."
+        echo "Please run with distillation enabled (do not use --skip-data) or ensure the file exists."
+        exit 1
+    fi
+
     echo "Stage A: SFT (Reasoning Distillation)..."
     python3 research/scripts/train_sft.py
 

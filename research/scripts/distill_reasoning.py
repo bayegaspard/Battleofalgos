@@ -85,6 +85,10 @@ def main():
             if processed_count >= 50:
                 break
 
+    if processed_count == 0:
+        print("ERROR: No malware reports found or processed. Check data/hybrid-analysis/")
+        sys.exit(1)
+
     print(f"Successfully distilled {processed_count} samples to {output_path}")
 
 if __name__ == "__main__":

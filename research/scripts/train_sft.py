@@ -19,6 +19,13 @@ def train():
     dataset_path = os.path.join(base_dir, "data/finetuning/malware_sft_data.jsonl")
     output_dir = os.path.join(base_dir, "research/results/sft_mistral_lora")
 
+    print(f"Dataset path: {dataset_path}")
+    if not os.path.exists(dataset_path):
+        print(f"CRITICAL ERROR: Dataset not found at {dataset_path}")
+        print(f"Current working directory: {base_dir}")
+        print("Please ensure you have run the distillation step (Stage 2).")
+        return
+
     print(f"Loading model: {model_id}")
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     tokenizer.pad_token = tokenizer.eos_token
