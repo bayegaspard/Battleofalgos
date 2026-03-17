@@ -5,10 +5,10 @@ from datasets import load_dataset
 import os
 
 def train():
-    # Switching to Mistral-7B-Instruct-v0.3 (Non-gated) to ensure 'one-command' execution
+    # Using Mistral-7B-Instruct-v0.3 (Non-gated)
     model_id = "mistralai/Mistral-7B-Instruct-v0.3" 
     dataset_path = "data/finetuning/malware_sft_data.jsonl"
-    output_dir = "research/results/sft_llama3_lora"
+    output_dir = "research/results/sft_mistral_lora"
 
     print(f"Loading model: {model_id}")
     tokenizer = AutoTokenizer.from_pretrained(model_id)

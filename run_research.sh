@@ -1,57 +1,52 @@
 #!/bin/bash
 
-# Battle of Algos: End-to-End Research Pipeline
-# Author: Senior Cybersecurity AI Research Scientist
-
-set -e
+# Battle of Algos: Research Pipeline Automator
+# -------------------------------------------
 
 echo "===================================================="
 echo "   BATTLE OF ALGOS: RESEARCH PIPELINE AUTOMATOR"
 echo "===================================================="
 
-# 1. Environment Check
-echo "[1/5] Checking Environment and Models..."
-if command -v nvidia-smi &> /dev/null; then
-    echo "Found NVIDIA GPU:"
-    nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
-elif [[ "$OSTYPE" == "darwin"* ]]; then
-    echo "Running on MacOS (MPS support available)"
-else
-    echo "No GPU detected. Training might be extremely slow."
+# 1. Environment & VENV Setup
+echo "[1/5] Setting up Virtual Environment and Dependencies..."
+
+if [ ! -d "venv" ]; then
+    echo "Creating virtual environment..."
+    python3 -m venv venv
 fi
 
-# Ensure Ollama models are pulled
-if command -v ollama &> /dev/null; then
-    echo "Pulling Ollama models for baseline..."
-    ollama pull mistral:latest
-    ollama pull llama3:latest
-else
-    echo "Ollama not found. Please install it for baseline evaluations."
-fi
+echo "Activating virtual environment..."
+source venv/bin/activate
+
+# Upgrade pip and install dependencies from requirements.txt
+echo "Installing required Python libraries from requirements.txt..."
+python3 -m pip install -q --upgrade pip
+python3 -m pip install -q -r requirements.txt
+
+# Verify installation of critical modules
+python3 -c "from google import genai; import peft; print('Dependencies verified.')" || { echo "Dependency verification failed."; exit 1; }
+
+# Regenerate questions with context
+echo "Regenerating questions with report context..."
+python3 scripts/generate_questions.py
 
 # 2. Baseline Evaluation
 echo -e "\n[2/5] Running Multi-Model Baseline Evaluation..."
 python3 research/scripts/research_evaluator.py
 
-# 3. Supervised Fine-Tuning (SFT)
+# 3. SFT Training
 echo -e "\n[3/5] Starting SFT Training (Reasoning Distillation)..."
-# Note: Ensure data/finetuning/malware_sft_data.jsonl exists or run distillation first
-if [ ! -f "data/finetuning/malware_sft_data.jsonl" ]; then
-    echo "SFT Data not found! Run distillation script first."
-    # python3 scripts/distill_reasoning.py --samples 50
-fi
 python3 research/scripts/train_sft.py
 
-# 4. Comparative Evaluation
-echo -e "\n[4/5] Running Evaluation on Fine-Tuned Models..."
-# We will update research_evaluator.py to include the new SFT checkpoint path
-# For now, we rerun the evaluator which will pick up the current state
+# 4. Expert Evaluation
+echo -e "\n[4/5] Running Expert vs. Baseline Comparison..."
 python3 research/scripts/research_evaluator.py
 
-# 5. Visualization & Paper Artifacts
-echo -e "\n[5/5] Generating IEEE-style Visualizations..."
+# 5. Visualization
+echo -e "\n[5/5] Generating IEEE-style Research Visualizations..."
 python3 research/scripts/visualize_results.py
 
 echo -e "\n===================================================="
-echo "   PROCESS COMPLETE: CHECK research/results/ "
+echo "   RESEARCH PIPELINE COMPLETE"
+echo "   Results saved in: research/results/"
 echo "===================================================="

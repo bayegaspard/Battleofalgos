@@ -60,8 +60,9 @@ class ResearchEvaluator:
             
             preds = []
             for item in tqdm(self.data[:20]):
+                report_ctx = json.dumps(item.get('report', {}), indent=2)
                 options_str = "\n".join([f"{chr(65+i)}. {opt}" for i, opt in enumerate(item['options'])])
-                prompt = f"### System: You are a Tier-3 SOC Analyst. Analyze the following and think step-by-step.\n\n### Options:\n{options_str}\n\n### Report: {item['question']}\n\n### Response:"
+                prompt = f"### System: You are a Tier-3 SOC Analyst. Analyze the following sandbox report and answer the multiple-choice question.\n\n### Report:\n{report_ctx}\n\n### Question:\n{item['question']}\n\n### Options:\n{options_str}\n\n### Response:"
                 
                 payload = {
                     "model": model_path,
@@ -71,8 +72,13 @@ class ResearchEvaluator:
                 }
                 
                 try:
-                    response_obj = requests.post(url, json=payload, timeout=60).json()
+                    response_obj = requests.post(url, json=payload, timeout=120).json()
                     response = response_obj.get("response", "")
+                    
+                    # Log first response for each model to a file
+                    with open("research/results/evaluation_debug.log", "a") as log:
+                        log.write(f"\n--- DEBUG RESPONSE ({name}) ---\n{response}\n------------------\n")
+                        
                 except Exception as e:
                     print(f"Error calling Ollama: {e}")
                     response = ""
@@ -82,9 +88,33 @@ class ResearchEvaluator:
                 precision = calculate_precision_score(response)
                 density = len(thought.split()) / (len(response.split()) + 1)
                 
-                # Answer extraction and mapping
-                ans_match = re.search(r"Answer:\s*([A-D, ]+)", response)
-                pred_letters = [a.strip().upper() for a in ans_match.group(1).split(",")] if ans_match else []
+                # ROBUST Answer extraction and mapping
+                # Look for 'Answer: A', 'The answer is B', or just a trailing 'A'
+                ans_patterns = [
+                    r"Answer[:\s]*\**([A-D])\**",
+                    r"The\s+answer\s+is[:\s]*\**([A-D])\**",
+                    r"The\s+correct\s+answer\s+is[:\s]*\**([A-D])\**",
+                    r"final\s+answer\s+is\s+.*?boxed\{([A-D])\}",
+                    r"boxed\{([A-D])\}",
+                    r"Selection[:\s]*\**([A-D])\**",
+                    r"aligns\s+with\s+option\s+\**([A-D])\**",
+                    r"option[:\s]*\**([A-D])\**",
+                    r"choice[:\s]*\**([A-D])\**",
+                    r"^\s*\**([A-D])\**\s*$",
+                    r"(?m)^\s*\*?\*?([A-D])\.\s" 
+                ]
+                pred_letters = []
+                for p in ans_patterns:
+                    match = re.search(p, response, re.IGNORECASE)
+                    if match:
+                        pred_letters = [a.strip().upper() for a in match.group(1).replace(",", " ").split()]
+                        break
+                
+                # Fallback: if no pattern, check if the last non-empty line is just a letter
+                if not pred_letters and response.strip():
+                    last_line = response.strip().split("\n")[-1].strip()
+                    if re.match(r"^[A-D]$", last_line, re.I):
+                        pred_letters = [last_line.upper()]
                 
                 # Map letters back to option text
                 pred_texts = []
@@ -94,6 +124,9 @@ class ResearchEvaluator:
                         pred_texts.append(item['options'][idx])
                 
                 is_correct = set(pred_texts) == set(item['correct_options'])
+                with open("/tmp/evaluation_comparison.log", "a") as f:
+                    f.write(f"DEBUG: {name} | Pred Letters: {pred_letters} | Pred: {pred_texts} | Expected: {item['correct_options']} | Match: {is_correct}\n")
+                print(f"DEBUG recorded for {name}")
                 
                 preds.append({
                     "Model": name,
@@ -107,18 +140,40 @@ class ResearchEvaluator:
             router = LLMRouter("config.yaml")
             preds = []
             for item in tqdm(self.data[:20]):
+                report_ctx = json.dumps(item.get('report', {}), indent=2)
                 options_str = "\n".join([f"{chr(65+i)}. {opt}" for i, opt in enumerate(item['options'])])
-                prompt = f"### System: You are a Tier-3 SOC Analyst. Analyze the following and think step-by-step.\n\n### Options:\n{options_str}\n\n### Report: {item['question']}\n\n### Response:"
+                prompt = f"### System: You are a Tier-3 SOC Analyst. Analyze the following sandbox report and answer the multiple-choice question.\n\n### Report:\n{report_ctx}\n\n### Question:\n{item['question']}\n\n### Options:\n{options_str}\n\n### Response:"
                 response = router.generate(prompt)
+                
+                # Log first response
+                with open("research/results/evaluation_debug.log", "a") as log:
+                    log.write(f"\n--- DEBUG RESPONSE ({name}) ---\n{response}\n------------------\n")
                 
                 # Metrics
                 thought = extract_thinking(response)
                 precision = calculate_precision_score(response)
                 density = len(thought.split()) / (len(response.split()) + 1)
                 
-                # Answer extraction and mapping
-                ans_match = re.search(r"Answer:\s*([A-D, ]+)", response)
-                pred_letters = [a.strip().upper() for a in ans_match.group(1).split(",")] if ans_match else []
+                # ROBUST Answer extraction
+                ans_patterns = [
+                    r"Answer[:\s]*\**([A-D])\**",
+                    r"The\s+answer\s+is[:\s]*\**([A-D])\**",
+                    r"The\s+correct\s+answer\s+is[:\s]*\**([A-D])\**",
+                    r"final\s+answer\s+is\s+.*?boxed\{([A-D])\}",
+                    r"boxed\{([A-D])\}",
+                    r"Selection[:\s]*\**([A-D])\**",
+                    r"aligns\s+with\s+option\s+\**([A-D])\**",
+                    r"option[:\s]*\**([A-D])\**",
+                    r"choice[:\s]*\**([A-D])\**",
+                    r"^\s*\**([A-D])\**\s*$",
+                    r"(?m)^\s*\*?\*?([A-D])\.\s" 
+                ]
+                pred_letters = []
+                for p in ans_patterns:
+                    match = re.search(p, response, re.IGNORECASE)
+                    if match:
+                        pred_letters = [a.strip().upper() for a in match.group(1).replace(",", " ").split()]
+                        break
                 
                 # Map letters back to option text
                 pred_texts = []
@@ -128,6 +183,9 @@ class ResearchEvaluator:
                         pred_texts.append(item['options'][idx])
                 
                 is_correct = set(pred_texts) == set(item['correct_options'])
+                with open("/tmp/evaluation_comparison.log", "a") as f:
+                    f.write(f"DEBUG: {name} | Pred Letters: {pred_letters} | Pred: {pred_texts} | Expected: {item['correct_options']} | Match: {is_correct}\n")
+                print(f"DEBUG recorded for {name}")
                 
                 preds.append({
                     "Model": name,
@@ -139,17 +197,23 @@ class ResearchEvaluator:
             return pd.DataFrame(preds)
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", type=str, default=None)
+    args = parser.parse_args()
+
     models = {
-        "Baseline_Gemini": {"path": "gemini-2.5-flash", "is_local": False},
+        "Baseline_Gemini": {"path": "gemini-2.0-flash", "is_local": False},
         "Baseline_Llama3": {"path": "llama3:latest", "is_local": True},
         "Baseline_Mistral": {"path": "mistral:latest", "is_local": True},
-        "SFT_Expert_Llama3": {"path": "research/results/sft_llama3_lora", "is_local": True},
+        "SFT_Expert_Mistral": {"path": "research/results/sft_mistral_lora", "is_local": True},
     }
     
-    evaluator = ResearchEvaluator("data/questions/questions.json", models)
+    target_models = {args.model: models[args.model]} if args.model and args.model in models else models
+    evaluator = ResearchEvaluator("data/questions/questions.json", target_models)
     
     all_results = []
-    for name, config in models.items():
+    for name, config in target_models.items():
         res = evaluator.evaluate_model(name, config["path"], is_local=config["is_local"])
         all_results.append(res)
         
