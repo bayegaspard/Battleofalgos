@@ -59,7 +59,9 @@ def calculate_reward(query, response):
     return torch.tensor(reward)
 
 # 4. Data Preparation
-dataset = load_dataset("json", data_files="data/finetuning/malware_sft_data.jsonl", split="train")
+base_dir = os.getcwd()
+dataset_path = os.path.join(base_dir, "data/finetuning/malware_sft_data.jsonl")
+dataset = load_dataset("json", data_files=dataset_path, split="train")
 
 def tokenize(sample):
     # Prepare query for PPO
@@ -106,5 +108,6 @@ for epoch in range(1):
         ppo_trainer.log_stats(stats, batch, rewards)
 
 # 7. Save
-model.save_pretrained("malware_analyst_ppo")
-print("PPO Model saved to malware_analyst_ppo")
+save_path = os.path.join(base_dir, "malware_analyst_ppo")
+model.save_pretrained(save_path)
+print(f"PPO Model saved to {save_path}")

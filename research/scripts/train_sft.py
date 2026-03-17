@@ -7,8 +7,9 @@ import os
 def train():
     # Using Mistral-7B-Instruct-v0.3 (Non-gated)
     model_id = "mistralai/Mistral-7B-Instruct-v0.3" 
-    dataset_path = "data/finetuning/malware_sft_data.jsonl"
-    output_dir = "research/results/sft_mistral_lora"
+    base_dir = os.getcwd()
+    dataset_path = os.path.join(base_dir, "data/finetuning/malware_sft_data.jsonl")
+    output_dir = os.path.join(base_dir, "research/results/sft_mistral_lora")
 
     print(f"Loading model: {model_id}")
     tokenizer = AutoTokenizer.from_pretrained(model_id)

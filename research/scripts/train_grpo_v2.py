@@ -81,7 +81,8 @@ def reasoning_length_reward_func(completions, **kwargs) -> list[float]:
 
 # 4. Data Preparation
 # We need prompt/answer pairs
-dataset_path = "data/finetuning/malware_sft_data.jsonl"
+base_dir = os.getcwd()
+dataset_path = os.path.join(base_dir, "data/finetuning/malware_sft_data.jsonl")
 raw_dataset = load_dataset("json", data_files=dataset_path, split="train")
 
 def prep_grpo_data(example):
@@ -122,7 +123,7 @@ training_args = GRPOConfig(
     num_train_epochs = 1,
     save_steps = 10,
     max_grad_norm = 0.1,
-    output_dir = "outputs/grpo",
+    output_dir = os.path.join(base_dir, "outputs/grpo"),
 )
 
 trainer = GRPOTrainer(
@@ -142,6 +143,7 @@ print("Starting GRPO Training...")
 trainer.train()
 
 # 7. Save
-model.save_pretrained("malware_analyst_grpo")
-tokenizer.save_pretrained("malware_analyst_grpo")
-print("GRPO Model saved to malware_analyst_grpo")
+save_path = os.path.join(base_dir, "malware_analyst_grpo")
+model.save_pretrained(save_path)
+tokenizer.save_pretrained(save_path)
+print(f"GRPO Model saved to {save_path}")

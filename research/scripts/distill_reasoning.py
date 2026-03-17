@@ -32,11 +32,14 @@ class MalwareDataDistiller:
             return None
 
 def main():
-    llm = LLMRouter("config.yaml")
-    distiller = MalwareDataDistiller(llm, "prompts/malware_distillation.jinja")
+    base_dir = os.getcwd()
+    reports_dir = os.path.join(base_dir, "data/hybrid-analysis")
+    output_path = os.path.join(base_dir, "data/finetuning/malware_sft_data.jsonl")
+    config_path = os.path.join(base_dir, "config.yaml")
+    prompt_path = os.path.join(base_dir, "prompts/malware_distillation.jinja")
 
-    reports_dir = "data/hybrid-analysis"
-    output_path = "data/finetuning/malware_sft_data.jsonl"
+    llm = LLMRouter(config_path)
+    distiller = MalwareDataDistiller(llm, prompt_path)
     
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 

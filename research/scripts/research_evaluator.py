@@ -202,15 +202,20 @@ def main():
     parser.add_argument("--model", type=str, default=None)
     args = parser.parse_args()
 
+    base_dir = os.getcwd()
+    questions_path = os.path.join(base_dir, "data/questions/questions.json")
+    
     models = {
         "Baseline_Gemini": {"path": "gemini-2.0-flash", "is_local": False},
         "Baseline_Llama3": {"path": "llama3:latest", "is_local": True},
         "Baseline_Mistral": {"path": "mistral:latest", "is_local": True},
-        "SFT_Expert_Mistral": {"path": "research/results/sft_mistral_lora", "is_local": True},
+        "SFT_Expert_Mistral": {"path": os.path.join(base_dir, "research/results/sft_mistral_lora"), "is_local": True},
+        "PPO_Expert_Llama": {"path": os.path.join(base_dir, "malware_analyst_ppo"), "is_local": True},
+        "GRPO_Expert_Llama": {"path": os.path.join(base_dir, "malware_analyst_grpo"), "is_local": True},
     }
     
     target_models = {args.model: models[args.model]} if args.model and args.model in models else models
-    evaluator = ResearchEvaluator("data/questions/questions.json", target_models)
+    evaluator = ResearchEvaluator(questions_path, target_models)
     
     all_results = []
     for name, config in target_models.items():
