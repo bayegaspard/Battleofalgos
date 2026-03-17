@@ -10,7 +10,7 @@ echo "   BATTLE OF ALGOS: RESEARCH PIPELINE AUTOMATOR"
 echo "===================================================="
 
 # 1. Environment Check
-echo "[1/5] Checking Environment..."
+echo "[1/5] Checking Environment and Models..."
 if command -v nvidia-smi &> /dev/null; then
     echo "Found NVIDIA GPU:"
     nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
@@ -18,6 +18,15 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
     echo "Running on MacOS (MPS support available)"
 else
     echo "No GPU detected. Training might be extremely slow."
+fi
+
+# Ensure Ollama models are pulled
+if command -v ollama &> /dev/null; then
+    echo "Pulling Ollama models for baseline..."
+    ollama pull mistral:latest
+    ollama pull llama3:latest
+else
+    echo "Ollama not found. Please install it for baseline evaluations."
 fi
 
 # 2. Baseline Evaluation

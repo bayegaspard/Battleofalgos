@@ -5,7 +5,8 @@ from datasets import load_dataset
 import os
 
 def train():
-    model_id = "meta-llama/Meta-Llama-3-8B-Instruct" # Users usually have this or can get it
+    # Switching to Mistral-7B-Instruct-v0.3 (Non-gated) to ensure 'one-command' execution
+    model_id = "mistralai/Mistral-7B-Instruct-v0.3" 
     dataset_path = "data/finetuning/malware_sft_data.jsonl"
     output_dir = "research/results/sft_llama3_lora"
 
