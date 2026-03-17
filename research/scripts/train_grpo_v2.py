@@ -10,9 +10,25 @@ to reason through malware reports. It rewards:
 
 import re
 import os
+import sys
 import torch
 from datasets import load_dataset, Dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
+
+# Mock vLLM for Mac/Import checks (TRL 0.14.0+)
+try:
+    import vllm
+except ImportError:
+    from types import ModuleType
+    mock_vllm = ModuleType("vllm")
+    mock_vllm.distributed = ModuleType("vllm.distributed")
+    mock_vllm.distributed.device_communicators = ModuleType("vllm.distributed.device_communicators")
+    mock_vllm.LLM = type("LLM", (), {})
+    mock_vllm.SamplingParams = type("SamplingParams", (), {})
+    sys.modules["vllm"] = mock_vllm
+    sys.modules["vllm.distributed"] = mock_vllm.distributed
+    sys.modules["vllm.distributed.device_communicators"] = mock_vllm.distributed.device_communicators
+
 from trl import GRPOConfig, GRPOTrainer
 
 # Optional Unsloth for CUDA speedup

@@ -8,11 +8,27 @@ analyst preferences. It requires:
 3. A Reward mechanism (Scoring function or Reward Model)
 """
 
+import sys
 import os
 import torch
 from datasets import load_dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
+
+# Mock vLLM for Mac/Import checks (TRL 0.14.0+)
+try:
+    import vllm
+except ImportError:
+    from types import ModuleType
+    mock_vllm = ModuleType("vllm")
+    mock_vllm.distributed = ModuleType("vllm.distributed")
+    mock_vllm.distributed.device_communicators = ModuleType("vllm.distributed.device_communicators")
+    mock_vllm.LLM = type("LLM", (), {})
+    mock_vllm.SamplingParams = type("SamplingParams", (), {})
+    sys.modules["vllm"] = mock_vllm
+    sys.modules["vllm.distributed"] = mock_vllm.distributed
+    sys.modules["vllm.distributed.device_communicators"] = mock_vllm.distributed.device_communicators
+
 from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, create_reference_model
 
 # Optional Unsloth for CUDA speedup
@@ -23,16 +39,20 @@ except ImportError:
     HAS_UNSLOTH = False
 
 # 1. Configuration
-config = PPOConfig(
-    model_name="unsloth/Llama-3.2-3B-Instruct-bnb-4bit",
-    learning_rate=1.41e-5,
-    batch_size=4,
-    mini_batch_size=1,
-    gradient_accumulation_steps=4,
-    optimize_cuda_cache=True,
-    early_stopping=True,
-    target_kl=0.1,
-)
+config_args = {
+    "learning_rate": 1.41e-5,
+    "batch_size": 4,
+    "mini_batch_size": 1,
+    "gradient_accumulation_steps": 4,
+    "kl_coef": 0.05,
+    "cliprange": 0.2,
+}
+
+# Add model_name only if supported (older TRL versions)
+try:
+    config = PPOConfig(model_name="unsloth/Llama-3.2-3B-Instruct-bnb-4bit", **config_args)
+except TypeError:
+    config = PPOConfig(**config_args)
 
 # 2. Load Model
 device = "mps" if torch.backends.mps.is_available() else "cpu"
