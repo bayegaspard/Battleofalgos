@@ -39,8 +39,12 @@ base_dir = os.getcwd()
 # Determine model to use (smaller on MPS to avoid OOM)
 if device == "mps":
     MODEL_ID = "unsloth/Llama-3.2-1B-Instruct"
+    VALUE_MODEL_ID = MODEL_ID  # same arch, no quant needed on MPS
 else:
     MODEL_ID = "unsloth/Llama-3.2-3B-Instruct-bnb-4bit"
+    # Value model MUST be non-quantized: normal_() init fails on uint8/4-bit tensors.
+    # Using 1B here to save VRAM; it shares the same tokenizer & architecture.
+    VALUE_MODEL_ID = "unsloth/Llama-3.2-1B-Instruct"
 
 PPO_CONFIG = PPOConfig(
     exp_name="malware_ppo",
@@ -143,9 +147,12 @@ for p in ref_model.parameters():
     p.requires_grad_(False)
 
 # Value model: AutoModelForSequenceClassification has a linear .score head
-# num_labels=1 → scalar critic output
+# num_labels=1 → scalar critic output.
+# NOTE: Must load from a NON-quantized checkpoint. Quantized (4-bit / uint8)
+#       weights cause "normal_kernel_cuda not implemented for Byte" when
+#       PyTorch tries to randomly init the new score head via normal_().
 value_model = AutoModelForSequenceClassification.from_pretrained(
-    MODEL_ID, num_labels=1, dtype=dtype, ignore_mismatched_sizes=True
+    VALUE_MODEL_ID, num_labels=1, torch_dtype=dtype, ignore_mismatched_sizes=True
 )
 value_model = value_model.to(device)
 
