@@ -15,21 +15,25 @@ import torch
 from datasets import load_dataset, Dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-# Mock vLLM for Mac/Import checks (TRL 0.14.0+)
-try:
-    import vllm
-except ImportError:
-    from types import ModuleType
-    mock_vllm = ModuleType("vllm")
-    mock_vllm.distributed = ModuleType("vllm.distributed")
-    mock_vllm.distributed.device_communicators = ModuleType("vllm.distributed.device_communicators")
-    mock_vllm.LLM = type("LLM", (), {})
-    mock_vllm.SamplingParams = type("SamplingParams", (), {})
-    sys.modules["vllm"] = mock_vllm
-    sys.modules["vllm.distributed"] = mock_vllm.distributed
-    sys.modules["vllm.distributed.device_communicators"] = mock_vllm.distributed.device_communicators
+# -----------------------------------------------------------------------
+# vLLM Compatibility Layer
+# -----------------------------------------------------------------------
+# On NVIDIA servers with a partial/broken vLLM install the module may land in
+# sys.modules with __spec__ = None.  importlib.util.find_spec() raises
+# ValueError in that case, which crashes trl on import.  Remove it first so
+# trl gets a clean availability check before we install our own mock.
+import importlib.machinery
 
-# Robust TRL Imports for GRPO
+def _clean_broken_vllm():
+    """Remove any sys.modules entries whose __spec__ is None."""
+    keys = [k for k in list(sys.modules) if k == "vllm" or k.startswith("vllm.")]
+    for k in keys:
+        if getattr(sys.modules[k], "__spec__", None) is None:
+            del sys.modules[k]
+
+_clean_broken_vllm()
+
+# Now import trl (needs a clean sys.modules view of vllm)
 try:
     from trl import GRPOConfig, GRPOTrainer
 except ImportError:
@@ -38,6 +42,27 @@ except ImportError:
     except ImportError:
         print("ERROR: TRL GRPO library structure is unexpected. Please run 'pip install trl==0.14.0'")
         raise
+
+# After trl is imported and cached, install a safe vllm mock for anything
+# downstream that might try to import it.  We set __spec__ so that future
+# find_spec() calls don't raise ValueError.
+try:
+    import vllm  # use real vllm if genuinely available
+except (ImportError, Exception):
+    from types import ModuleType
+    def _make_mock(name):
+        m = ModuleType(name)
+        m.__spec__ = importlib.machinery.ModuleSpec(name, None)
+        return m
+    mock_vllm = _make_mock("vllm")
+    mock_vllm.distributed = _make_mock("vllm.distributed")
+    mock_vllm.distributed.device_communicators = _make_mock("vllm.distributed.device_communicators")
+    mock_vllm.LLM = type("LLM", (), {})
+    mock_vllm.SamplingParams = type("SamplingParams", (), {})
+    sys.modules["vllm"] = mock_vllm
+    sys.modules["vllm.distributed"] = mock_vllm.distributed
+    sys.modules["vllm.distributed.device_communicators"] = mock_vllm.distributed.device_communicators
+
 
 # Optional Unsloth for CUDA speedup
 try:
