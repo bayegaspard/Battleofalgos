@@ -136,12 +136,20 @@ if tokenizer.pad_token is None:
 tokenizer.padding_side = "left"  # PPO needs left-padding for generation
 
 # Policy model (the one we train)
-dtype = torch.float16 if device == "cuda" else torch.float32
-policy_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, dtype=dtype)
+# Use bfloat16 on CUDA: more numerically stable than fp16 (no NaN/inf after
+# a few gradient steps), and H100 has native bf16 hardware support.
+if device == "cuda":
+    dtype = torch.bfloat16
+elif device == "mps":
+    dtype = torch.float32  # MPS doesn't fully support fp16/bf16
+else:
+    dtype = torch.float32
+
+policy_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, torch_dtype=dtype)
 policy_model = policy_model.to(device)
 
 # Reference model (frozen copy of policy)
-ref_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, dtype=dtype)
+ref_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, torch_dtype=dtype)
 ref_model = ref_model.to(device)
 for p in ref_model.parameters():
     p.requires_grad_(False)
