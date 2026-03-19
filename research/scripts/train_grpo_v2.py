@@ -29,7 +29,15 @@ except ImportError:
     sys.modules["vllm.distributed"] = mock_vllm.distributed
     sys.modules["vllm.distributed.device_communicators"] = mock_vllm.distributed.device_communicators
 
-from trl import GRPOConfig, GRPOTrainer
+# Robust TRL Imports for GRPO
+try:
+    from trl import GRPOConfig, GRPOTrainer
+except ImportError:
+    try:
+        from trl.trainer import GRPOConfig, GRPOTrainer
+    except ImportError:
+        print("ERROR: TRL GRPO library structure is unexpected. Please run 'pip install trl==0.14.0'")
+        raise
 
 # Optional Unsloth for CUDA speedup
 try:
