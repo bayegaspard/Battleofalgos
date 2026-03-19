@@ -194,32 +194,35 @@ ppo_trainer = PPOTrainer(
     reward_model=policy_model,  # placeholder (logic overridden by monkey-patch)
     value_model=value_model,
 )
-
 # -----------------------------------------------------------------------
 # 6. Train
 # -----------------------------------------------------------------------
+
+# Monkey-patch save_model on the instance BEFORE train(), so that all
+# checkpoint saves (mid-training AND end-of-training) bypass the broken
+# revert_weight_conversion() path that crashes on 4-bit quantized models.
+def _safe_save_model(self, output_dir=None, _internal_call=False):
+    """Save only the policy state dict, avoiding save_pretrained on quantized weights."""
+    if output_dir is None:
+        output_dir = self.args.output_dir
+    os.makedirs(output_dir, exist_ok=True)
+    try:
+        policy = self.accelerator.unwrap_model(self.model).policy
+    except Exception:
+        policy = policy_model  # fallback to original handle
+    state_dict = {k: v.cpu() for k, v in policy.state_dict().items()}
+    torch.save(state_dict, os.path.join(output_dir, "policy_state_dict.pt"))
+    self.processing_class.save_pretrained(output_dir)
+    print(f"[safe_save] Policy state dict saved to {output_dir}/policy_state_dict.pt")
+
+import types
+ppo_trainer.save_model = types.MethodType(_safe_save_model, ppo_trainer)
+
 print("Starting PPO Alignment...")
 ppo_trainer.train()
+
 # -----------------------------------------------------------------------
-# 7. Save
+# 7. Save final model
 # -----------------------------------------------------------------------
 save_path = os.path.join(base_dir, "research/results/malware_analyst_ppo")
-os.makedirs(save_path, exist_ok=True)
-
-# ppo_trainer.save_model() crashes for 4-bit quantized base models because
-# save_pretrained() calls revert_weight_conversion() which raises NotImplementedError.
-# Instead, we unwrap the model and save the raw state dict directly.
-try:
-    unwrapped_policy = ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).policy
-    state_dict = {k: v.cpu() for k, v in unwrapped_policy.state_dict().items()}
-    torch.save(state_dict, os.path.join(save_path, "policy_state_dict.pt"))
-    tokenizer.save_pretrained(save_path)
-    print(f"PPO Policy state dict saved to {save_path}/policy_state_dict.pt")
-    print("To reload: model.load_state_dict(torch.load('policy_state_dict.pt'))")
-except Exception as e:
-    # Fallback: save directly from the original policy_model handle
-    print(f"accelerator unwrap failed ({e}), saving directly from policy_model...")
-    state_dict = {k: v.cpu() for k, v in policy_model.state_dict().items()}
-    torch.save(state_dict, os.path.join(save_path, "policy_state_dict.pt"))
-    tokenizer.save_pretrained(save_path)
-    print(f"PPO Policy state dict saved to {save_path}/policy_state_dict.pt")
+ppo_trainer.save_model(save_path)
