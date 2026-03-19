@@ -200,10 +200,26 @@ ppo_trainer = PPOTrainer(
 # -----------------------------------------------------------------------
 print("Starting PPO Alignment...")
 ppo_trainer.train()
-
 # -----------------------------------------------------------------------
 # 7. Save
 # -----------------------------------------------------------------------
 save_path = os.path.join(base_dir, "research/results/malware_analyst_ppo")
-ppo_trainer.save_model(save_path)
-print(f"PPO Model saved to {save_path}")
+os.makedirs(save_path, exist_ok=True)
+
+# ppo_trainer.save_model() crashes for 4-bit quantized base models because
+# save_pretrained() calls revert_weight_conversion() which raises NotImplementedError.
+# Instead, we unwrap the model and save the raw state dict directly.
+try:
+    unwrapped_policy = ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).policy
+    state_dict = {k: v.cpu() for k, v in unwrapped_policy.state_dict().items()}
+    torch.save(state_dict, os.path.join(save_path, "policy_state_dict.pt"))
+    tokenizer.save_pretrained(save_path)
+    print(f"PPO Policy state dict saved to {save_path}/policy_state_dict.pt")
+    print("To reload: model.load_state_dict(torch.load('policy_state_dict.pt'))")
+except Exception as e:
+    # Fallback: save directly from the original policy_model handle
+    print(f"accelerator unwrap failed ({e}), saving directly from policy_model...")
+    state_dict = {k: v.cpu() for k, v in policy_model.state_dict().items()}
+    torch.save(state_dict, os.path.join(save_path, "policy_state_dict.pt"))
+    tokenizer.save_pretrained(save_path)
+    print(f"PPO Policy state dict saved to {save_path}/policy_state_dict.pt")
