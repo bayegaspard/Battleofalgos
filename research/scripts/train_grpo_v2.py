@@ -171,18 +171,23 @@ training_args = GRPOConfig(
     warmup_ratio = 0.1,
     lr_scheduler_type = "cosine",
     logging_steps = 1,
-    bf16 = is_bfloat16_supported_fallback(),
-    fp16 = not is_bfloat16_supported_fallback(),
+    bf16 = False, # MPS doesn't support bf16 fully in all operations
+    fp16 = False, # Use fp32 for stability on MPS if needed, or stick to default
     per_device_train_batch_size = 1,
     gradient_accumulation_steps = 4,
-    num_generations = 4, # Group size for GRPO
-    max_prompt_length = 512,
-    max_completion_length = 512,
+    num_generations = 2, # Reduced for Mac memory
+    max_prompt_length = 256,
+    max_completion_length = 256,
     num_train_epochs = 1,
     save_steps = 10,
     max_grad_norm = 0.1,
     output_dir = os.path.join(base_dir, "outputs/grpo"),
+    use_vllm = False, # Explicitly disable on Mac
 )
+
+# Fix for TRL 0.14.0+ where GRPOTrainer expects warnings_issued dict
+if not hasattr(model, "warnings_issued"):
+    model.warnings_issued = {}
 
 trainer = GRPOTrainer(
     model = model,

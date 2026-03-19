@@ -3,187 +3,192 @@ PPO Alignment Script for Malware Analysts
 ------------------------------------------
 This script uses Proximal Policy Optimization (PPO) to align a model with
 analyst preferences. It requires:
-1. A Policy Model (the one we train)
-2. A Reference Model (usually the SFT baseline)
-3. A Reward mechanism (Scoring function or Reward Model)
+1. A Policy Model (AutoModelForCausalLM - the one we train)
+2. A Reference Model (a frozen copy of policy)
+3. A Value Model (AutoModelForSequenceClassification - has built-in .score head)
+4. A Reward mechanism (Custom Python scoring function)
+
+Compatible with trl >= 0.13.0 (new Trainer-based PPOTrainer).
+Does NOT require AutoModelForCausalLMWithValueHead.
 """
 
-import sys
 import os
+import sys
 import torch
 from datasets import load_dataset
 from tqdm import tqdm
-from transformers import AutoTokenizer, AutoModelForCausalLM
-
-# ------------------------------------------
-
-# Robust TRL & Transformers Imports
-try:
-    from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, create_reference_model
-except ImportError:
-    try:
-        from trl.models import AutoModelForCausalLMWithValueHead
-        from trl.trainer import PPOConfig, PPOTrainer
-        from trl.models.utils import create_reference_model
-    except ImportError:
-        # Final fallback for some specific TRL versions
-        from trl.models.modeling_value_head import AutoModelForCausalLMWithValueHead
-        from trl.trainer.ppo_config import PPOConfig
-        from trl.trainer.ppo_trainer import PPOTrainer
-        from trl.models import create_reference_model
-
-# Optional Unsloth for CUDA speedup
-try:
-    from unsloth import FastLanguageModel
-    HAS_UNSLOTH = True
-except ImportError:
-    HAS_UNSLOTH = False
-
-# Monkey-patch trl.trainer.ppo_trainer to handle AutoModelForCausalLMWithValueHead 
-# (Direct patch because PPOTrainer uses "from .utils import ...")
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    AutoModelForSequenceClassification,
+)
+from trl import PPOConfig, PPOTrainer
+from trl.trainer.utils import first_true_indices
 import trl.trainer.ppo_trainer as ppo_trainer_module
-from transformers.utils import ModelOutput
 
+# -----------------------------------------------------------------------
 # 1. Configuration
-config_args = {
-    "learning_rate": 1.41e-5,
-    "per_device_train_batch_size": 1,
-    "gradient_accumulation_steps": 4,
-    "num_mini_batches": 1,
-    "response_length": 128,
-    "total_episodes": 100,
-    "kl_coef": 0.05,
-    "cliprange": 0.2,
-    "vf_coef": 0.1,
-    "output_dir": "research/results/ppo_malware",
-}
+# -----------------------------------------------------------------------
+device = "mps" if torch.backends.mps.is_available() else "cpu"
+if torch.cuda.is_available():
+    device = "cuda"
+print(f"Using device: {device}")
 
+base_dir = os.getcwd()
+
+# Determine model to use (smaller on MPS to avoid OOM)
+if device == "mps":
+    MODEL_ID = "unsloth/Llama-3.2-1B-Instruct"
+else:
+    MODEL_ID = "unsloth/Llama-3.2-3B-Instruct-bnb-4bit"
+
+PPO_CONFIG = PPOConfig(
+    exp_name="malware_ppo",
+    learning_rate=1.41e-5,
+    per_device_train_batch_size=1,
+    gradient_accumulation_steps=4,
+    num_mini_batches=1,
+    response_length=128,
+    total_episodes=100,
+    kl_coef=0.05,
+    cliprange=0.2,
+    vf_coef=0.1,
+    num_sample_generations=0,  # Disabled: no eval_dataset provided
+    output_dir=os.path.join(base_dir, "research/results/ppo_malware"),
+)
+
+# -----------------------------------------------------------------------
 # 2. Custom Reward Logic (The 'Analyst Preference')
-def calculate_reward(query, response):
+# -----------------------------------------------------------------------
+def calculate_reward(query: str, response: str) -> float:
     """
-    In a real scenario, this would be a Reward Model (RM).
-    Here, we reward professional tone and technical precision.
+    Rule-based proxy reward function.
+    Rewards professional malware-analysis keywords and penalizes verbosity.
+    In production, replace with a trained Reward Model.
     """
     reward = 0.0
-    # Reward for professional keywords
     keywords = ["persistence", "obfuscation", "entropy", "mutex", "api call"]
     for kw in keywords:
         if kw in response.lower():
             reward += 0.2
-            
-    # Penalty for being too wordy or generic
     if len(response.split()) > 300:
         reward -= 0.5
-        
     return reward
 
-def patched_get_reward(model, query_responses, pad_token_id, context_length):
-    """Replacement for trl.trainer.utils.get_reward that handles both values and rewards."""
-    # 1. Compute sequence lengths (needed for both)
-    from trl.trainer.utils import first_true_indices
-    sequence_lengths = first_true_indices(query_responses[:, context_length:] == pad_token_id) - 1 + context_length
-    
-    # 2. Compute Values (from value head of value_model)
-    with torch.no_grad():
-        out = model(query_responses)
-        full_value = out[2] # shape (batch, seq)
 
-    # 3. Compute Custom Rewards (from python function)
-    queries = tokenizer.batch_decode(query_responses[:, :context_length], skip_special_tokens=True)
-    responses = tokenizer.batch_decode(query_responses[:, context_length:], skip_special_tokens=True)
-    rewards = [calculate_reward(q, r) for q, r in zip(queries, responses)]
-    rewards_tensor = torch.tensor(rewards, device=query_responses.device, dtype=torch.float32)
-    
-    return (full_value, rewards_tensor, sequence_lengths)
+def make_patched_get_reward(tok, value_model):
+    """
+    Factory that returns a get_reward replacement closure.
 
-ppo_trainer_module.get_reward = patched_get_reward
+    The new PPOTrainer calls get_reward twice per episode:
+     - First call (with value_model): fetches full per-token values from critic.
+     - Second call (with reward_model): fetches final scalar rewards.
 
-# Also patch forward to wrap tuples in ModelOutput
-old_forward = ppo_trainer_module.forward
-def patched_forward(*args, **kwargs):
-    out = old_forward(*args, **kwargs)
-    if isinstance(out, tuple):
-        if len(out) == 2:
-            # PolicyAndValueWrapper.forward returns (policy_out, value_logits)
-            policy_out, value_logits = out
-            if isinstance(policy_out, tuple):
-                policy_out = ModelOutput(logits=policy_out[0], loss=policy_out[1])
-            return policy_out, value_logits
-        elif len(out) >= 3:
-            # AutoModelForCausalLMWithValueHead.forward returns (logits, loss, value)
-            return ModelOutput(logits=out[0], loss=out[1])
-    return out
-ppo_trainer_module.forward = patched_forward
+    Because we use the same function for both, we detect which is being called
+    by inspecting whether the model has a `.score` method (value_model does).
+    """
+    def patched_get_reward(model, query_responses, pad_token_id, context_length):
+        seq_lens = (
+            first_true_indices(query_responses[:, context_length:] == pad_token_id)
+            - 1
+            + context_length
+        )
 
-# 3. Load Model
-device = "mps" if torch.backends.mps.is_available() else "cpu"
-if torch.cuda.is_available(): device = "cuda"
+        # --- Value call: model has .score, return per-token value estimates ---
+        if hasattr(model, "score"):
+            attention_mask = query_responses != pad_token_id
+            position_ids = attention_mask.cumsum(1) - attention_mask.long()
+            input_ids = torch.masked_fill(query_responses, ~attention_mask, 0)
+            with torch.no_grad():
+                out = model.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    return_dict=True,
+                    output_hidden_states=True,
+                )
+                # .score is a Linear(hidden_size, 1) → shape (B, T, 1)
+                full_value = model.score(out.hidden_states[-1]).squeeze(-1)
+            return (full_value, None, seq_lens)
 
-config = PPOConfig(
-    exp_name="malware_ppo",
-    **config_args
+        # --- Reward call: model is policy (no .score), return scalar rewards ---
+        queries   = tok.batch_decode(query_responses[:, :context_length], skip_special_tokens=True)
+        responses = tok.batch_decode(query_responses[:, context_length:],  skip_special_tokens=True)
+        rewards   = [calculate_reward(q, r) for q, r in zip(queries, responses)]
+        rewards_t = torch.tensor(rewards, device=query_responses.device, dtype=torch.float32)
+        return (None, rewards_t, seq_lens)
+
+    return patched_get_reward
+
+
+# -----------------------------------------------------------------------
+# 3. Load Models & Tokenizer
+# -----------------------------------------------------------------------
+print(f"Loading tokenizer and models from: {MODEL_ID}")
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
+tokenizer.padding_side = "left"  # PPO needs left-padding for generation
+
+# Policy model (the one we train)
+dtype = torch.float16 if device == "cuda" else torch.float32
+policy_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, dtype=dtype)
+policy_model = policy_model.to(device)
+
+# Reference model (frozen copy of policy)
+ref_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, dtype=dtype)
+ref_model = ref_model.to(device)
+for p in ref_model.parameters():
+    p.requires_grad_(False)
+
+# Value model: AutoModelForSequenceClassification has a linear .score head
+# num_labels=1 → scalar critic output
+value_model = AutoModelForSequenceClassification.from_pretrained(
+    MODEL_ID, num_labels=1, dtype=dtype, ignore_mismatched_sizes=True
 )
+value_model = value_model.to(device)
 
-if HAS_UNSLOTH and device == "cuda":
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name = "unsloth/Llama-3.2-3B-Instruct-bnb-4bit",
-        load_in_4bit = True,
-    )
-    model = AutoModelForCausalLMWithValueHead.from_pretrained(model)
-else:
-    # Fallback to standard Transformers if no CUDA or Unsloth
-    print(f"Using standard Transformers on {device}")
-    model_id = "unsloth/Llama-3.2-1B-Instruct" if device == "mps" else "unsloth/Llama-3.2-3B-Instruct-bnb-4bit"
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    model = AutoModelForCausalLMWithValueHead.from_pretrained(model_id)
-    if device != "cuda": model = model.to(device)
+# Inject our monkey-patched get_reward AFTER models are built
+ppo_trainer_module.get_reward = make_patched_get_reward(tokenizer, value_model)
 
-# Ensure generation_config and base_model_prefix are available (needed for trl 0.13+)
-if not hasattr(model, "generation_config"):
-    model.generation_config = model.pretrained_model.generation_config
-if not hasattr(model, "base_model_prefix"):
-    model.base_model_prefix = "pretrained_model"
-
-# Attach v_head as score method (needed for PolicyAndValueWrapper)
-if not hasattr(model, "score"):
-    model.score = model.v_head
-
-ref_model = create_reference_model(model)
-
+# -----------------------------------------------------------------------
 # 4. Data Preparation
-base_dir = os.getcwd()
+# -----------------------------------------------------------------------
 dataset_path = os.path.join(base_dir, "data/finetuning/malware_sft_data.jsonl")
 dataset = load_dataset("json", data_files=dataset_path, split="train")
 
-# New PPO expects prompts in a specific format if using Chat templates, but here we keep it simple
 def tokenize(sample):
-    sample["input_ids"] = tokenizer.encode(sample["input"], truncation=True, max_length=512)
+    sample["input_ids"] = tokenizer.encode(
+        sample["input"], truncation=True, max_length=512
+    )
     return sample
 
 dataset = dataset.map(tokenize, batched=False, remove_columns=dataset.column_names)
 dataset.set_format(type="torch")
 
-# 5. Trainer
-# Since we monkey-patched get_reward, reward_model is not really used for computation, 
-# but it must be passed as an nn.Module. We pass the model itself as a placeholder.
+# -----------------------------------------------------------------------
+# 5. PPOTrainer Setup
+# -----------------------------------------------------------------------
 ppo_trainer = PPOTrainer(
-    args=config,
-    model=model,
+    args=PPO_CONFIG,
+    model=policy_model,
     ref_model=ref_model,
     processing_class=tokenizer,
     train_dataset=dataset,
-    reward_model=model, 
-    value_model=model,
+    reward_model=policy_model,  # placeholder (logic overridden by monkey-patch)
+    value_model=value_model,
 )
 
-# 6. Training Loop
+# -----------------------------------------------------------------------
+# 6. Train
+# -----------------------------------------------------------------------
 print("Starting PPO Alignment...")
-# In 0.13.0, we just call train()
 ppo_trainer.train()
 
+# -----------------------------------------------------------------------
 # 7. Save
+# -----------------------------------------------------------------------
 save_path = os.path.join(base_dir, "research/results/malware_analyst_ppo")
 ppo_trainer.save_model(save_path)
 print(f"PPO Model saved to {save_path}")
