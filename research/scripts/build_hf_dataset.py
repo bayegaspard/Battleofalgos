@@ -102,8 +102,8 @@ Return raw JSON (no markdown fences):
   "options":        ["Option A", "Option B", "Option C", "Option D"],
   "correct_options":["Option A"],
   "rationale":      "Detailed step-by-step reasoning citing report evidence...",
-  "malware_family": "Emotet",
-  "ttps":           ["T1059.001", "T1547.001"],
+  "malware_family": "<Extract from report, e.g. Trickbot or Unknown>",
+  "ttps":           ["<Extract TTP 1>", "<Extract TTP 2>"],
   "thought":        "<thought>\\nStep 1: ...\\nStep 2: ...\\n</thought>",
   "answer":         "<answer>Option A</answer>"
 }}
