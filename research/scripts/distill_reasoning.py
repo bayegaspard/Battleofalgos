@@ -32,11 +32,14 @@ class MalwareDataDistiller:
             return None
 
 def main():
-    base_dir = os.getcwd()
-    reports_dir = os.path.join(base_dir, "data/hybrid-analysis")
-    output_path = os.path.join(base_dir, "data/finetuning/malware_sft_data.jsonl")
-    config_path = os.path.join(base_dir, "config.yaml")
-    prompt_path = os.path.join(base_dir, "prompts/malware_distillation.jinja")
+    # Construct paths relative to the script to avoid cwd issues
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(script_dir, "../.."))
+    
+    reports_dir = os.path.join(project_root, "data/hybrid-analysis")
+    output_path = os.path.join(project_root, "data/finetuning/malware_sft_data.jsonl")
+    config_path = os.path.join(project_root, "config.yaml")
+    prompt_path = os.path.join(project_root, "prompts/malware_distillation.jinja")
 
     llm = LLMRouter(config_path)
     distiller = MalwareDataDistiller(llm, prompt_path)
