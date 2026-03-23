@@ -1,0 +1,442 @@
+% ============================================================
+%  IEEE S&P 2026 Conference Poster
+%  Title: Privacy-Preserving Malware Analysis with On-Prem LLMs
+%         via Reinforcement Learning Alignment
+%  Author: Gaspard Baye, Valix AI
+%
+%  Compile:  pdflatex poster_sp2026.tex   (twice for references)
+%  Requires: beamer, beamerposter, tikz, booktabs, amsmath
+%
+%  Print size: 24 x 36 inches (portrait).
+%  Scale to US letter PDF before uploading to HotCRP.
+% ============================================================
+
+\documentclass[final]{beamer}
+
+\usepackage[
+  orientation=portrait,
+  size=custom,
+  width=60.96,    % 24 inches in cm
+  height=91.44,   % 36 inches in cm
+  scale=1.15
+]{beamerposter}
+
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{url}
+\usepackage{xcolor}
+\usepackage[nocompress]{cite}
+
+\usetikzlibrary{arrows.meta, shapes.geometric, positioning}
+
+% ============================================================
+%  COLOUR PALETTE
+% ============================================================
+\definecolor{spnavy}{HTML}{0D1B2A}
+\definecolor{spaccent}{HTML}{F4A024}
+\definecolor{spblue}{HTML}{1B6CA8}
+\definecolor{splightblue}{HTML}{D6E8F7}
+\definecolor{spgray}{HTML}{F5F5F5}
+\definecolor{spred}{HTML}{C0392B}
+\definecolor{spgreen}{HTML}{27AE60}
+
+% ============================================================
+%  BEAMER THEME SETUP
+% ============================================================
+\usetheme{default}
+\setbeamercolor{background canvas}{bg=white}
+\setbeamercolor{block title}{fg=white, bg=spblue}
+\setbeamercolor{block body}{fg=black, bg=splightblue}
+\setbeamercolor{block title alerted}{fg=white, bg=spred}
+\setbeamercolor{block body alerted}{fg=black, bg=spgray}
+\setbeamercolor{block title example}{fg=white, bg=spgreen}
+\setbeamercolor{block body example}{fg=black, bg=spgray}
+\setbeamertemplate{navigation symbols}{}
+\setbeamerfont{block title}{size=\large, series=\bfseries}
+\setbeamerfont{block body}{size=\normalsize}
+
+\newcommand{\vsep}{\vspace{1.2em}}
+
+% ============================================================
+\begin{document}
+\begin{frame}[t]{}
+
+% ============================================================
+%  HEADER — unified single box: logo | title | badge
+% ============================================================
+\begin{beamercolorbox}[wd=\paperwidth, ht=14cm, dp=1cm,
+    leftskip=1cm, rightskip=1cm, sep=0pt]{block title}
+
+  \vspace{0.6cm}
+
+  % --- Three-column layout: logo | title | conference badge ---
+  \begin{minipage}[c]{0.16\paperwidth}
+    % Replace with \includegraphics[height=3cm]{valix_logo} when available
+    {\fontsize{26}{30}\selectfont\bfseries\color{spaccent} Valix\,AI}\\[0.3em]
+    {\small\color{white} Chief Technology Officer}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[c]{0.60\paperwidth}
+    \centering
+    {\fontsize{30}{38}\selectfont\bfseries\color{white}
+      Privacy-Preserving Malware Analysis\\[0.2em]
+      with On-Prem LLMs via\\[0.2em]
+      Reinforcement Learning Alignment}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[c]{0.16\paperwidth}
+    \raggedleft
+    {\large\bfseries\color{spaccent} IEEE S\&P 2026}\\[0.3em]
+    {\normalsize\color{white} Poster Session}\\[0.3em]
+    {\small\color{white} San Francisco, CA}
+  \end{minipage}
+
+  \vspace{0.6cm}
+  {\color{spaccent}\rule{\linewidth}{1.5pt}}
+  \vspace{0.3cm}
+
+  % --- Author line centred below ---
+  \centering
+  {\Large\bfseries\color{white} Gaspard Baye}\quad
+  {\normalsize\color{white}
+    Chief Technology Officer, Valix AI\quad
+    \texttt{baye@valix.ai}}
+
+  \vspace{0.4cm}
+\end{beamercolorbox}
+
+% ============================================================
+%  TWO-COLUMN BODY
+% ============================================================
+\begin{columns}[T]
+
+% ============================================================
+%  LEFT COLUMN
+% ============================================================
+\begin{column}{0.48\linewidth}
+
+% ------ MOTIVATION ------------------------------------------
+\begin{block}{Motivation}
+SOC analysts must classify malware behaviors from sandbox reports,
+map them to MITRE ATT\&CK tactics, and prioritize responses under high
+alert volume.
+Frontier LLMs (GPT-4, Gemini) automate this triage well, but
+\textbf{require sensitive endpoint telemetry to leave the organization},
+creating conflicts with SOC~2, HIPAA, and NIST~800-53.
+
+\vsep
+
+% GRAPHIC 1 — Cloud vs On-Prem diagram
+% Two side-by-side flow diagrams separated by a firewall line.
+% Left (red): SOC Analyst -> Cloud API, labelled "Telemetry leaves perimeter"
+% Right (green): SOC Analyst -> On-Prem GPU, labelled "Data stays inside firewall"
+\begin{center}
+\begin{tikzpicture}[
+  flowbox/.style={draw, rounded corners=4pt,
+                  minimum width=2.8cm, minimum height=1cm,
+                  align=center, font=\small},
+  flowarr/.style={-{Stealth[length=5pt]}, thick}
+]
+  % Left panel: cloud risk
+  \node[flowbox, fill=red!10, draw=spred]   (soc1)  at (0,0)    {SOC\\Analyst};
+  \node[flowbox, fill=red!10, draw=spred]   (cloud) at (5,0)    {Cloud\\API};
+  \draw[flowarr, color=spred, dashed]
+    (soc1) -- (cloud)
+    node[midway, above, font=\tiny, color=spred]{sensitive telemetry};
+  \node[font=\small\bfseries, color=spred] at (2.5,-1.4) {Privacy Risk};
+
+  % Firewall divider
+  \draw[dashed, thick, color=spblue] (7.2,-1.8) -- (7.2,1.2)
+    node[above, font=\footnotesize\color{spblue}]{Firewall};
+
+  % Right panel: on-prem safe
+  \node[flowbox, fill=green!10, draw=spgreen] (soc2)   at (9.5,0)  {SOC\\Analyst};
+  \node[flowbox, fill=green!10, draw=spgreen] (onprem) at (14.5,0) {On-Prem\\LLM};
+  \draw[flowarr, color=spgreen]
+    (soc2) -- (onprem)
+    node[midway, above, font=\tiny, color=spgreen]{local inference};
+  \node[font=\small\bfseries, color=spgreen] at (12,-1.4) {Privacy Safe};
+\end{tikzpicture}
+\end{center}
+
+\vsep
+
+\begin{alertblock}{Core Research Question}
+  \centering\large
+  Can a \textbf{compact (3B) on-prem LLM}, aligned via RL, approach
+  frontier accuracy for malware triage -- with \textbf{zero data exfiltration}?
+\end{alertblock}
+
+\end{block}
+
+\vsep
+
+% ------ THREAT MODEL ----------------------------------------
+\begin{block}{Threat Model}
+\begin{itemize}
+  \item \textbf{Adversary:} Network-level attacker or cloud-provider
+    insider able to intercept or correlate queries to a cloud API.
+  \item \textbf{Protected asset:} Behavioral telemetry of the
+    organization's endpoints, network flows, and malware sandbox data.
+  \item \textbf{Security property:} On-prem inference confines all
+    processing inside the security perimeter; no query crosses a
+    boundary, eliminating the data-exfiltration attack surface.
+\end{itemize}
+\end{block}
+
+\vsep
+
+% ------ DISTILLATION ----------------------------------------
+\begin{block}{Silver-Standard Distillation (Step 0)}
+
+\begin{columns}[T]
+  \begin{column}{0.54\linewidth}
+    We curate \textbf{10,000 raw malware sandbox reports} from
+    Hybrid-Analysis and VirusTotal.
+    Gemini~2.0-Flash generates reasoning chains, which are then
+    semantically augmented to form a \textbf{1M-sample HuggingFace dataset}:
+    \[
+      \mathcal{D} = \{(x_i,\, c_i,\, y_i)\}_{i=1}^{1,000,000}
+    \]
+    where $x_i$ is the raw report, $c_i$ the reasoning chain,
+    $y_i$ the threat label.
+
+    \smallskip
+    \textit{Limitation:} Gemini errors can propagate into $\mathcal{D}$.
+    Rule-based RL rewards in Stages~2--3 act as a correction filter.
+  \end{column}
+  \begin{column}{0.40\linewidth}
+    % GRAPHIC 2 — Vertical distillation flow
+    % Raw Report -> Gemini 2.0-Flash -> <thought> chain -> Corpus D
+    \begin{center}
+    \begin{tikzpicture}[
+      fbox/.style={draw, rounded corners=3pt, fill=spgray,
+                   minimum width=3.2cm, minimum height=0.85cm,
+                   align=center, font=\small},
+      farr/.style={-{Stealth}, thick, color=spblue}
+    ]
+      \node[fbox] (rpt) at (0,0)    {Raw Reports (10k)};
+      \node[fbox] (gem) at (0,-2.2) {Gemini 2.0-Flash};
+      \node[fbox] (chn) at (0,-4.4) {Semantic Augmentation};
+      \node[fbox] (cor) at (0,-6.6) {1M-Sample HF Dataset};
+      \draw[farr] (rpt) -- (gem);
+      \draw[farr] (gem) -- (chn);
+      \draw[farr] (chn) -- (cor);
+    \end{tikzpicture}
+    \end{center}
+  \end{column}
+\end{columns}
+
+\end{block}
+
+\vsep
+
+% ------ CONTRIBUTIONS ----------------------------------------
+\begin{block}{Key Contributions}
+\begin{enumerate}
+  \item \textbf{First} ATT\&CK-grounded multi-objective reward design
+    applied to RL alignment for SOC reasoning.
+  \item \textbf{Silver-Standard Distillation:} frontier-model reasoning
+    bootstrapped into a local corpus without human annotation.
+  \item \textbf{Privacy-accuracy tradeoff analysis} between cloud and
+    on-premise LLMs in a malware triage setting.
+\end{enumerate}
+\end{block}
+
+\end{column} % end left column
+
+% ============================================================
+%  RIGHT COLUMN
+% ============================================================
+\begin{column}{0.48\linewidth}
+
+% ------ PIPELINE --------------------------------------------
+\begin{block}{Three-Stage RL Alignment Pipeline}
+
+% GRAPHIC 3 — Horizontal pipeline flow diagram
+% [Corpus D] -> [Stage 1: SFT] -> [Stage 2: PPO] -> [Stage 3: GRPO] -> [On-Prem Expert]
+% Each box colour-coded; annotation below each stage.
+\begin{center}
+\begin{tikzpicture}[
+  pbox/.style={draw, rounded corners=5pt,
+               minimum width=3cm, minimum height=2cm,
+               align=center, font=\small\bfseries},
+  parr/.style={-{Stealth[length=7pt]}, line width=1.5pt, color=spnavy},
+  plbl/.style={font=\tiny, text width=3cm, align=center, color=gray}
+]
+  \node[pbox, fill=spblue!20,    draw=spblue]   (sft)  at (0,0)
+    {Stage 1\\SFT\\{\footnotesize Learn format}};
+  \node[pbox, fill=spaccent!25,  draw=spaccent] (ppo)  at (5.2,0)
+    {Stage 2\\PPO\\{\footnotesize Reward quality}};
+  \node[pbox, fill=spgreen!20,   draw=spgreen]  (grpo) at (10.4,0)
+    {Stage 3\\GRPO\\{\footnotesize Rank \& refine}};
+  \node[pbox, fill=spnavy!15,    draw=spnavy]   (out)  at (15.6,0)
+    {On-Prem\\SOC Expert};
+
+  \draw[parr] (sft)  -- (ppo);
+  \draw[parr] (ppo)  -- (grpo);
+  \draw[parr] (grpo) -- (out);
+
+  \node[plbl] at (0,-1.8)   {Imitates Gemini reasoning};
+  \node[plbl] at (5.2,-1.8) {ATT\&CK reward signal};
+  \node[plbl] at (10.4,-1.8){Group-relative advantage};
+  \node[plbl] at (15.6,-1.8){On-prem deployment};
+\end{tikzpicture}
+\end{center}
+
+\vsep
+
+\textbf{Stage~1 -- SFT.}
+Model imitates distilled \texttt{<thought>}/\texttt{<answer>} structure:
+$\;\mathcal{L}_\text{SFT}(\theta) = -\sum_i \log P_\theta(y_i, c_i \mid x_i)$.
+
+\vsep
+\textbf{Stage~2 -- PPO.}
+A composite reward is maximised while a frozen reference model
+$\pi_\text{ref}$ (KL anchor) prevents reward exploitation.
+
+\vsep
+\textbf{Stage~3 -- GRPO.}
+$G{=}8$ candidate responses per report; within-group advantage
+$A_k {=} (r_k {-} \mu(r))\,/\,\sigma(r)$ drives the policy toward
+the best response without a separate critic network.
+
+\end{block}
+
+\vsep
+
+% ------ REWARD ----------------------------------------------
+\begin{exampleblock}{Multi-Objective Reward Architecture}
+
+Each response scored on three analyst-relevant criteria:
+\[
+  R(O \mid Q)=
+    \underbrace{\lambda_\text{fmt}\,R_\text{fmt}}_{\text{structured output}}
+  +\underbrace{\lambda_\text{acc}\,R_\text{acc}}_{\text{correct answer}}
+  +\underbrace{\lambda_\text{prec}\,R_\text{prec}}_{\text{ATT\&CK terms}}
+\]
+
+\begin{center}
+\begin{tabular}{lll}
+  \toprule
+  \textbf{Component} & \textbf{Range} & \textbf{Rewards} \\
+  \midrule
+  $R_\text{fmt}$  & $[0,\,0.5]$ & \texttt{<thought>}/\texttt{<answer>} tags present \\
+  $R_\text{acc}$  & $\{0,\,1\}$ & Exact ground-truth threat label match \\
+  $R_\text{prec}$ & $[0,\,1]$   & Density of MITRE ATT\&CK terms in response \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\smallskip
+% GRAPHIC 4 — Reward component bar chart (generate externally)
+% Grouped horizontal bars: R_fmt, R_acc, R_prec for each model.
+% All baselines show 0 on R_fmt (no tags). Show expected post-GRPO uplift.
+% Recommended: pgfplots or matplotlib PDF, then \includegraphics{reward_bars}
+\textit{(Reward component breakdown --- full results at poster session.)}
+
+\end{exampleblock}
+
+\vsep
+
+% ------ RESULTS ---------------------------------------------
+\begin{block}{Preliminary Results \textnormal{(Pilot, $N\!=\!20$)}}
+
+\small\textbf{Note:} Pilot benchmark --- interpret as feasibility signal.
+Full statistical evaluation with confidence intervals to follow.
+
+\vsep
+
+\begin{center}
+\begin{tabular}{lcccc}
+  \toprule
+  \textbf{Model} & \textbf{Acc.} & \textbf{Tech.\ Prec.}
+                 & \textbf{Words} & \textbf{Reasoning} \\
+  \midrule
+  Gemini 2.0 (cloud ref.)   & 98\% & 0.108 & 505 & 0.00 \\
+  LLaMA-3 8B (baseline)     & 85\% & 0.082 & 208 & 0.00 \\
+  Mistral 7B (baseline)     & 75\% & 0.091 & 282 & 0.00 \\
+  \midrule
+  SFT Expert (LLaMA-3.2)   & \multicolumn{4}{c}{\emph{poster session}} \\
+  PPO Expert (LLaMA-3.2)   & \multicolumn{4}{c}{\emph{poster session}} \\
+  GRPO Expert (LLaMA-3.2)  & \multicolumn{4}{c}{\emph{poster session}} \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\vsep
+
+% GRAPHIC 5 — Accuracy vs. Word Count scatter
+% X-axis: Avg words per response. Y-axis: Accuracy.
+% Points: Gemini (star), LLaMA-3 (circle), Mistral (triangle).
+% Shade a "target zone" (high accuracy, low word count).
+% Recommended: matplotlib PDF -> \includegraphics{scatter_acc_words}
+\textit{(Accuracy vs.\ verbosity scatter --- full results at poster session.)}
+
+\vsep
+\textbf{Key insight:} No baseline produces structured reasoning
+(Reasoning Density\,$=\!0$).
+Most common failure: \emph{partial label extraction} -- correct malware
+family identified, secondary behavior missed (e.g., persistence mechanism).
+This is exactly the gap the \texttt{<thought>} chain and GRPO reward target.
+
+\end{block}
+
+\vsep
+
+% ------ REPRODUCIBILITY -------------------------------------
+\begin{block}{Implementation Details \& Reproducibility}
+
+\begin{tabular}{ll}
+  \textbf{Base model:}   & LLaMA 3.2 (3B) via HuggingFace TRL \\
+  \textbf{Hardware:}     & 1$\times$ NVIDIA H100 80\,GB \\
+  \textbf{Dataset:}      & 1M-sample HF dataset (augmented from 10k reports) \\
+  \textbf{Distillation:} & Gemini 2.0-Flash (structured TTP reasoning) \\
+  \textbf{SFT:}          & 1 epoch, lr\,$=2{\times}10^{-4}$, cosine schedule \\
+  \textbf{PPO/GRPO:}     & lr\,$=5{\times}10^{-6}$, group size $G{=}8$ \\
+  \textbf{Evaluation:}   & 20 human-verified malware analysis questions \\
+\end{tabular}
+
+\vsep
+\textbf{Code, prompts, and reward scripts will be released upon
+acceptance} to support community reproducibility.
+
+\end{block}
+
+\vsep
+
+% ------ REFERENCES ------------------------------------------
+{\small
+\begin{thebibliography}{6}
+\bibitem{ppo}    Schulman et al., PPO, arXiv:1707.06347, 2017.
+\bibitem{grpo}   Shao et al., DeepSeekMath, arXiv:2402.03300, 2024.
+\bibitem{llama3} Dubey et al., Llama~3, arXiv:2407.21783, 2024.
+\bibitem{mitre}  MITRE, ATT\&CK, \url{https://attack.mitre.org}, 2015.
+\bibitem{trl}    von Werra et al., TRL, \url{https://github.com/huggingface/trl}.
+\bibitem{ctibench} Ameri et al., CTIBench, arXiv:2406.07521, 2024.
+\end{thebibliography}
+}
+
+\end{column} % end right column
+\end{columns}
+
+\vsep
+
+% ============================================================
+%  FOOTER — plain coloured box, no overlay
+% ============================================================
+\begin{beamercolorbox}[wd=\paperwidth, ht=2.5cm, dp=0pt,
+    leftskip=1.5cm, rightskip=1.5cm]{block title}
+  \vfill
+  {\small\color{white}
+    IEEE Symposium on Security and Privacy 2026 \quad$|$\quad
+    Valix AI \quad$|$\quad \texttt{baye@valix.ai}}
+  \hfill
+  {\small\bfseries\color{spaccent} Poster Session}
+  \vfill
+\end{beamercolorbox}
+
+\end{frame}
+\end{document}

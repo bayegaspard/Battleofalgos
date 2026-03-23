@@ -1,0 +1,246 @@
+\documentclass[conference,compsoc]{IEEEtran}
+% IEEEtran.cls version 1.8b -- US letter paper is the default.
+% Do NOT add geometry or other packages that alter margins/paper size.
+
+\ifCLASSOPTIONcompsoc
+  \usepackage[nocompress]{cite}
+\else
+  \usepackage{cite}
+\fi
+
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{url}
+
+\hyphenation{op-tical net-works semi-conduc-tor}
+
+\begin{document}
+
+\title{Poster: Privacy-Preserving Malware Analysis with On-Prem LLMs
+       via Reinforcement Learning Alignment}
+
+\author{%
+  \IEEEauthorblockN{Gaspard Baye}
+  \IEEEauthorblockA{Chief Technology Officer\\
+  Valix AI\\
+  baye@valix.ai}
+}
+
+\maketitle
+
+% ---------------------------------------------------------------
+\begin{abstract}
+Security Operations Center (SOC) analysts face a dual challenge: the
+volume of AI-enabled threats is growing while data-privacy regulations
+prohibit sending sensitive endpoint telemetry to cloud AI APIs.
+We present a \emph{preliminary feasibility study} of a three-stage
+reinforcement learning (RL) pipeline, combining Supervised Fine-Tuning
+(SFT), Proximal Policy Optimization (PPO)~\cite{ppo}, and Group Relative
+Policy Optimization (GRPO)~\cite{grpo}, for aligning a compact on-premise
+LLM (LLaMA~3.2, 3B~\cite{llama3}) toward analyst-grade malware triage.
+Rewards are grounded in MITRE~ATT\&CK~\cite{mitre} terminology and
+training data is bootstrapped from a 1-million-sample HuggingFace dataset
+of Gemini~\cite{gemini}-distilled reasoning chains, eliminating human annotation.
+On a 20-sample pilot benchmark, unaligned open-source baselines already
+reach 75--85\% task accuracy, providing a strong starting point for the RL
+alignment stages.
+To our knowledge, this is the first application of ATT\&CK-grounded
+multi-objective reward design to RL alignment of a privacy-preserving
+SOC-focused LLM.
+Full post-alignment results and qualitative analyses will be presented at
+the poster session.
+\end{abstract}
+
+% ---------------------------------------------------------------
+\section{Introduction}
+
+SOC analysts must rapidly classify malware behaviors from sandbox reports,
+map them to MITRE~ATT\&CK tactics, and prioritize incident responses
+under an ever-increasing alert volume~\cite{ctibench}.
+Frontier LLM APIs (e.g., GPT-4, Gemini) automate this triage effectively
+but require sensitive behavioral telemetry to leave the organization's
+perimeter, conflicting with compliance frameworks such as SOC~2, HIPAA,
+and NIST~800-53.
+
+\textbf{Threat model.}
+We consider an adversary capable of intercepting or correlating cloud API
+queries to infer the organization's threat posture.
+The asset under protection is endpoint and network behavioral telemetry.
+An on-premise LLM eliminates this exfiltration surface: inference is
+confined inside the security perimeter, no queries cross organizational
+boundaries, and the model is inaccessible to external parties.
+
+\textbf{Contributions.}
+This work makes three novel contributions:
+(1)~the first application of ATT\&CK-grounded multi-objective reward design
+to RL alignment for SOC reasoning;
+(2)~a \emph{Silver-Standard Distillation} framework that bootstraps
+high-quality domain-specific training data from frontier models without
+human annotation;
+and (3)~an empirical comparison of the accuracy-privacy tradeoff between
+cloud frontier models and locally aligned open-source LLMs for malware
+triage.
+
+% ---------------------------------------------------------------
+\section{Methodology}
+
+Our pipeline follows a ``teach-then-align'' strategy: SFT teaches the model
+to reason in structured analyst format, and two successive RL stages sharpen
+its accuracy and professional vocabulary.
+
+\textbf{Step~0 -- Silver-Standard Distillation.}
+We curate 10,000 raw malware sandbox reports from Hybrid-Analysis
+\cite{hybridanalysis} and VirusTotal~\cite{virustotal}.
+Gemini~2.0-Flash~\cite{gemini} generates a structured reasoning chain
+$c_i$ and threat label $y_i$ per report, which are then semantically
+augmented to form a 1-million-sample HuggingFace dataset~$\mathcal{D}$.
+Potential bias from Gemini is mitigated by using its outputs only as an
+imitation target in Stage~1; verifiable, rule-based rewards in Stages~2--3
+steer the model toward correct, analyst-grade behaviors.
+
+\textbf{Stage~1 -- SFT.}
+LLaMA~3.2 (3B)~\cite{llama3} is fine-tuned on $\mathcal{D}$
+\cite{deepseekmath} to produce structured
+\texttt{<thought>}/\texttt{<answer>} output:
+\begin{equation}
+  \mathcal{L}_\text{SFT}(\theta) = -\!\sum_i \log P_\theta(y_i,\,c_i \mid x_i).
+\end{equation}
+This instills reasoning structure the base model lacks entirely.
+
+\textbf{Stage~2 -- PPO~\cite{ppo}.}
+A composite reward is maximized while a frozen reference policy
+$\pi_\text{ref}$ (KL anchor) prevents reward exploitation.
+
+\textbf{Stage~3 -- GRPO~\cite{grpo}.}
+$G{=}8$ candidate responses are sampled per report; within-group advantage
+$A_k{=}(r_k{-}\mu(r))/\sigma(r)$ drives the policy toward the best
+response without requiring a separate critic network, making it
+memory-efficient for local hardware.
+
+\textbf{Reward architecture.}
+The composite reward mirrors three criteria a SOC analyst applies when
+evaluating a malware report:
+\begin{equation}
+  R(O\!\mid\! Q)\!=\!
+    \underbrace{\lambda_\text{fmt}R_\text{fmt}}_{\text{format}}
+  +\underbrace{\lambda_\text{acc}R_\text{acc}}_{\text{accuracy}}
+  +\underbrace{\lambda_\text{prec}R_\text{prec}}_{\text{ATT\&CK terms}},
+\end{equation}
+where $R_\text{fmt}\!\in\![0,0.5]$ rewards \texttt{<thought>}/\texttt{<answer>}
+adherence; $R_\text{acc}\!\in\!\{0,1\}$ rewards exact ground-truth label
+match; and $R_\text{prec}$ scores the density of high-value MITRE~ATT\&CK
+\cite{mitre} terms (e.g., ``process injection'', ``C2 beacon'',
+``persistence'') in the model's response.
+
+% ---------------------------------------------------------------
+\section{Preliminary Results}
+
+Table~\ref{tab:results} reports pilot performance before any RL alignment.
+Results should be interpreted as a feasibility signal on a small sample
+($N{=}20$); statistical evaluation with confidence intervals will accompany
+the full study.
+LLaMA-3 (8B)~\cite{llama3} reaches 85\% accuracy with highly concise
+208-word responses, demonstrating strong label-extraction capability.
+Mistral (7B)~\cite{mistral} achieves 75\% but exhibits higher ATT\&CK term
+density (0.091 vs.\ 0.082), suggesting richer security vocabulary at the
+cost of accuracy -- a tradeoff the joint reward architecture is designed to
+resolve.
+Critically, \emph{no baseline produces structured reasoning}
+(Reasoning Density\,$=\!0$); all answers lack explicit step-by-step
+justification.
+The most common failure mode observed is \emph{partial label extraction}:
+the correct malware family is identified but secondary behaviors
+(e.g., associated persistence mechanism) are missed.
+The \texttt{<thought>} chain and GRPO reward directly target this gap.
+
+\begin{table}[!t]
+  \renewcommand{\arraystretch}{1.15}
+  \caption{Pilot Evaluation ($N{=}20$). Gemini is a cloud reference only;
+           its score reflects ideal prompting on a small sample.
+           Aligned model results will be presented at the poster session.}
+  \label{tab:results}
+  \centering
+  \begin{tabular}{lcccc}
+    \toprule
+    \textbf{Model} & \textbf{Acc.} & \textbf{Prec.} &
+    \textbf{Words} & \textbf{Reasoning} \\
+    \midrule
+    Gemini~2.0~\cite{gemini} (cloud ref.) & 98\% & 0.108 & 505 & 0.00 \\
+    LLaMA-3 8B~\cite{llama3} (baseline)   & 85\% & 0.082 & 208 & 0.00 \\
+    Mistral 7B~\cite{mistral} (baseline)  & 75\% & 0.091 & 282 & 0.00 \\
+    \midrule
+    SFT / PPO / GRPO Expert & \multicolumn{4}{c}{\emph{poster session}} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Conclusion and Reproducibility}
+
+This work establishes a three-stage RL alignment methodology for
+privacy-preserving SOC malware triage, demonstrating that compact
+open-source LLMs are viable starting points before alignment.
+We make no claim of parity with frontier models; our goal is to define
+the methodology and characterize the baseline trajectory.
+Full statistical evaluation, ablation studies, and robustness testing
+against adversarial prompt injection will be presented at the poster session.
+\textbf{Setup:} LLaMA~3.2~(3B)~\cite{llama3}, HuggingFace
+TRL~\cite{trl}, 1$\times$NVIDIA H100; SFT $\text{lr}{=}2{\times}10^{-4}$,
+PPO/GRPO $\text{lr}{=}5{\times}10^{-6}$, $G{=}8$.
+Training prompts, reward source code, and evaluation scripts will be
+released upon acceptance to support community reproducibility.
+
+\ifCLASSOPTIONcompsoc
+  \section*{Acknowledgments}
+\else
+  \section*{Acknowledgment}
+\fi
+The author thanks HuggingFace TRL~\cite{trl}, the LLaMA
+project~\cite{llama3}, Hybrid-Analysis~\cite{hybridanalysis}, and
+VirusTotal~\cite{virustotal}.
+
+% ---------------------------------------------------------------
+\begin{thebibliography}{11}
+
+\bibitem{ppo}
+J.~Schulman \emph{et al.}, ``Proximal Policy Optimization Algorithms,''
+\emph{arXiv:1707.06347}, 2017.
+
+\bibitem{grpo}
+Z.~Shao \emph{et al.}, ``DeepSeekMath: Pushing the Limits of Mathematical
+Reasoning in Open Language Models,'' \emph{arXiv:2402.03300}, 2024.
+
+\bibitem{deepseekmath}
+D.~Guo \emph{et al.}, ``DeepSeek-R1: Incentivizing Reasoning Capability
+in LLMs via Reinforcement Learning,'' \emph{arXiv:2501.12948}, 2025.
+
+\bibitem{trl}
+L.~von Werra \emph{et al.}, ``TRL: Transformer Reinforcement Learning,''
+\url{https://github.com/huggingface/trl}, 2020.
+
+\bibitem{llama3}
+A.~Dubey \emph{et al.}, ``The Llama 3 Herd of Models,''
+\emph{arXiv:2407.21783}, 2024.
+
+\bibitem{mistral}
+A.~Q.~Jiang \emph{et al.}, ``Mistral 7B,'' \emph{arXiv:2310.06825}, 2023.
+
+\bibitem{gemini}
+Google DeepMind, ``Gemini 2.0,''
+\url{https://deepmind.google/technologies/gemini/}, 2024.
+
+\bibitem{mitre}
+MITRE Corporation, ``ATT\&CK,'' \url{https://attack.mitre.org}, 2015.
+
+\bibitem{ctibench}
+M.~Ameri \emph{et al.}, ``CTIBench,'' \emph{arXiv:2406.07521}, 2024.
+
+\bibitem{hybridanalysis}
+CrowdStrike, ``Hybrid Analysis,'' \url{https://www.hybrid-analysis.com}
+
+\bibitem{virustotal}
+Google, ``VirusTotal,'' \url{https://www.virustotal.com}
+
+\end{thebibliography}
+
+\end{document}
